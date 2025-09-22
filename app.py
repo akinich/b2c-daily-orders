@@ -68,9 +68,13 @@ def transform_orders(raw_orders):
             "No. of Items": items_count,
         })
 
-    # Sort by date, newest first
+    # Sort by Order ID (ascending)
     df = pd.DataFrame(data)
-    df = df.sort_values(by="Date", ascending=False).reset_index(drop=True)
+    df = df.sort_values(by="Order ID", ascending=True).reset_index(drop=True)
+
+    # Add serial number column starting at 1
+    df.insert(0, "S.No", range(1, len(df) + 1))
+
     return df
 
 # === Helper to create Excel file ===
@@ -103,26 +107,18 @@ if st.button("Fetch Orders"):
             st.warning("No orders found for the selected date range.")
         else:
             st.session_state.orders_df = transform_orders(orders_raw)
-            st.success(f"Fetched {len(st.session_state.orders_df)} orders")
+            st.success(
+                f"Fetched {len(st.session_state.orders_df)} orders between {start_date} and {end_date}"
+            )
 
 # === Display Orders If Available ===
 if st.session_state.orders_df is not None:
     df = st.session_state.orders_df
 
-    # Select how many orders to display
-    max_orders = st.number_input(
-        "Number of orders to display",
-        min_value=1,
-        max_value=len(df),
-        value=min(10, len(df)),
-        step=1
-    )
-    df_limited = df.head(max_orders)
-
     # Editable table with checkboxes
     st.subheader("Orders Table")
     edited_df = st.data_editor(
-        df_limited,
+        df,
         num_rows="dynamic",
         hide_index=True,
         use_container_width=True,
