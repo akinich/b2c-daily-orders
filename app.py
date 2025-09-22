@@ -3,6 +3,7 @@ import pandas as pd
 import requests
 from io import BytesIO
 from datetime import datetime
+import xlsxwriter
 
 # Streamlit page config
 st.set_page_config(page_title="Daily Orders", layout="wide")
@@ -76,28 +77,65 @@ def process_orders(orders):
             "No of Items": len(order['line_items']),
             "Mobile Number": order['billing'].get('phone', ''),
             "Shipping Address": shipping_address,
-            "Items Ordered": items_ordered
+            "Items Ordered": items_ordered,
+            "Line Items": order['line_items']  # keep original line_items for Sheet 2
         })
 
     return pd.DataFrame(data)
 
 
 def generate_excel(df):
-    """Generate a customized Excel file from selected orders."""
+    """Generate a customized Excel file with two sheets: Orders and Item Summary."""
     output = BytesIO()
 
-    # Create a DataFrame with only required columns
-    export_df = df[["Order ID", "Name", "Items Ordered", "Mobile Number", "Shipping Address", "Order Value"]].copy()
-    export_df.rename(columns={
-        "Order ID": "Order No",
-        "Order Value": "Order Total"
-    }, inplace=True)
-
     with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
-        export_df.to_excel(writer, index=False, sheet_name='Orders')
+        # --- Sheet 1: Orders ---
+        sheet1_df = df[["Order ID", "Name", "Items Ordered", "Mobile Number", "Shipping Address", "Order Value", "Order Status"]].copy()
+        sheet1_df.rename(columns={
+            "Order ID": "Order No",
+            "Order Value": "Order Total"
+        }, inplace=True)
+        sheet1_df.to_excel(writer, index=False, sheet_name='Orders')
+        workbook = writer.book
+        worksheet1 = writer.sheets['Orders']
+
+        # Format headers
+        header_format = workbook.add_format({'bold': True, 'font_color': 'black'})
+        for col_num, value in enumerate(sheet1_df.columns.values):
+            worksheet1.write(0, col_num, value, header_format)
+            worksheet1.set_column(col_num, col_num, 20)  # auto column width approx
+
+        # Adjust row height
+        for row_num in range(1, len(sheet1_df) + 1):
+            worksheet1.set_row(row_num, 18)
+
+        # --- Sheet 2: Item Summary ---
+        # Aggregate all line items for selected orders
+        items_list = []
+        for line_items in df['Line Items']:
+            for item in line_items:
+                items_list.append((item['name'], item.get('quantity', 1)))
+
+        # Create summary DataFrame
+        summary_df = pd.DataFrame(items_list, columns=['Item Name', 'Quantity'])
+        summary_df = summary_df.groupby('Item Name', as_index=False).sum()
+        summary_df = summary_df.sort_values('Item Name')
+
+        summary_df.to_excel(writer, index=False, sheet_name='Item Summary')
+        worksheet2 = writer.sheets['Item Summary']
+
+        # Format headers for sheet 2
+        for col_num, value in enumerate(summary_df.columns.values):
+            worksheet2.write(0, col_num, value, header_format)
+            worksheet2.set_column(col_num, col_num, 20)
+
+        # Adjust row height
+        for row_num in range(1, len(summary_df) + 1):
+            worksheet2.set_row(row_num, 18)
 
     output.seek(0)
     return output
+
 
 # --- Streamlit UI ---
 st.title("Daily Orders")
