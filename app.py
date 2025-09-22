@@ -52,7 +52,11 @@ def process_orders(orders):
     """Process raw WooCommerce orders into a structured DataFrame."""
     data = []
     for idx, order in enumerate(sorted(orders, key=lambda x: x['id'])):
-        items_ordered = ", ".join([item['name'] for item in order['line_items']])
+        # Build Items Ordered with quantities
+        items_ordered = ", ".join([
+            f"{item['name']} x {item.get('quantity', 1)}" 
+            for item in order['line_items']
+        ])
 
         shipping = order.get("shipping", {})
         shipping_address = ", ".join(filter(None, [
@@ -101,7 +105,7 @@ def generate_excel(df):
         header_format = workbook.add_format({'bold': True, 'font_color': 'black'})
         for col_num, value in enumerate(sheet1_df.columns.values):
             worksheet1.write(0, col_num, value, header_format)
-            worksheet1.set_column(col_num, col_num, 25)
+            worksheet1.set_column(col_num, col_num, 30)
 
         # Row height
         for row_num in range(1, len(sheet1_df) + 1):
