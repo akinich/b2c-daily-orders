@@ -139,6 +139,8 @@ st.title("Daily Orders")
 # Initialize session state
 if "orders_df" not in st.session_state:
     st.session_state.orders_df = None
+if "orders_data" not in st.session_state:
+    st.session_state.orders_data = None
 
 # Date selection
 col1, col2 = st.columns(2)
@@ -152,8 +154,10 @@ if st.button("Fetch Orders"):
     with st.spinner("Fetching orders..."):
         orders = fetch_orders(start_date, end_date)
         if orders:
+            st.session_state.orders_data = orders  # full JSON
             st.session_state.orders_df = process_orders(orders)
         else:
+            st.session_state.orders_data = None
             st.session_state.orders_df = None
 
 # Display orders
@@ -176,10 +180,13 @@ if st.session_state.orders_df is not None:
     for i, order_id in enumerate(edited_df['Order ID']):
         st.session_state.orders_df.loc[st.session_state.orders_df['Order ID'] == order_id, 'Select'] = edited_df.loc[i, 'Select']
 
-    # --- FIX: Ensure Line Items exist ---
-    selected_orders = st.session_state.orders_df.loc[
-        st.session_state.orders_df['Select'] == True
-    ].copy()  # <-- copy preserves all columns
+    # --- Build selected_orders from full data ---
+    selected_order_ids = st.session_state.orders_df.loc[
+        st.session_state.orders_df['Select'] == True, 'Order ID'
+    ].tolist()
+
+    selected_orders_list = [o for o in st.session_state.orders_data if o['id'] in selected_order_ids]
+    selected_orders = process_orders(selected_orders_list)  # rebuild DataFrame with Line Items
 
     if not selected_orders.empty:
         st.success(f"{len(selected_orders)} orders selected for download.")
