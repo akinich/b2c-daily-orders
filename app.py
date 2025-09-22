@@ -162,8 +162,8 @@ if st.button("Fetch Orders"):
 
 # Display orders
 if st.session_state.orders_df is not None:
-    df = st.session_state.orders_df.copy()
-    
+    df = st.session_state.orders_df
+
     # Remove Line Items for display to avoid PyArrow errors
     display_df = df.drop(columns=["Line Items"]).copy()
     
@@ -174,20 +174,19 @@ if st.session_state.orders_df is not None:
 
     st.write(f"### Total Orders Found: {len(display_df)}")
 
-    # Editable table
+    # Editable table with persistent checkboxes
     edited_df = st.data_editor(
         display_df,
         hide_index=True,
         column_config={
             "Select": st.column_config.CheckboxColumn(required=False)
         },
-        width='stretch',  # replaces use_container_width
+        width='stretch',
         key="orders_table"
     )
 
-    # --- Sync Select column back to session_state ---
-    for i, order_id in enumerate(edited_df['Order ID']):
-        st.session_state.orders_df.loc[st.session_state.orders_df['Order ID'] == order_id, 'Select'] = edited_df.loc[i, 'Select']
+    # --- Sync Select column immediately back to session_state ---
+    st.session_state.orders_df['Select'] = edited_df['Select']
 
     # --- Build selected_orders from full data safely ---
     selected_order_ids = st.session_state.orders_df.loc[
