@@ -1,4 +1,4 @@
-    import streamlit as st
+import streamlit as st
 import pandas as pd
 import requests
 from io import BytesIO
@@ -79,7 +79,7 @@ def process_orders(orders):
 def generate_excel(df):
     output = BytesIO()
     with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
-        # --- Sheet 1 ---
+        # --- Sheet 1: Orders ---
         sheet1_df = df[["Order ID", "Name", "Items Ordered", "Mobile Number", "Shipping Address", "Order Value", "Order Status", "Total Items"]].copy()
         sheet1_df.rename(columns={"Order ID": "Order No", "Order Value": "Order Total"}, inplace=True)
         sheet1_df.to_excel(writer, index=False, sheet_name='Orders')
@@ -92,7 +92,7 @@ def generate_excel(df):
         for row_num in range(1, len(sheet1_df) + 1):
             worksheet1.set_row(row_num, 20)
 
-        # --- Sheet 2 ---
+        # --- Sheet 2: Item Summary ---
         items_list = []
         for line_items in df['Line Items']:
             for item in line_items:
@@ -135,7 +135,6 @@ if st.button("Fetch Orders"):
         if orders:
             st.session_state.orders_data = orders
             st.session_state.orders_df = process_orders(orders)
-            # Initialize checkbox state
             st.session_state.checkbox_state = [False] * len(st.session_state.orders_df)
         else:
             st.session_state.orders_data = None
@@ -148,6 +147,7 @@ if st.session_state.orders_df is not None:
     display_df = df.drop(columns=["Line Items"]).copy()
     display_df["Select"] = st.session_state.checkbox_state
 
+    # Cast numeric columns
     numeric_cols = ["Order ID", "No of Items", "Order Value"]
     if "Total Items" in display_df.columns:
         numeric_cols.append("Total Items")
@@ -169,28 +169,28 @@ if st.session_state.orders_df is not None:
         key="orders_table"
     )
 
-    # Update session_state checkbox values immediately
+    # Update checkbox state immediately
     st.session_state.checkbox_state = edited_df["Select"].tolist()
     st.session_state.orders_df["Select"] = edited_df["Select"]
 
     # Selected orders
-selected_order_ids = [o._asdict()['Order ID'] for o in st.session_state.orders_df.itertuples() if o.Select]
+    selected_order_ids = [o._asdict()['Order ID'] for o in st.session_state.orders_df.itertuples() if o.Select]
 
-if st.session_state.orders_data is not None:
-    selected_orders_list = [o for o in st.session_state.orders_data if o['id'] in selected_order_ids]
-else:
-    selected_orders_list = []
+    if st.session_state.orders_data is not None:
+        selected_orders_list = [o for o in st.session_state.orders_data if o['id'] in selected_order_ids]
+    else:
+        selected_orders_list = []
 
-selected_orders = process_orders(selected_orders_list)
+    selected_orders = process_orders(selected_orders_list)
 
-if not selected_orders.empty:
-    st.success(f"{len(selected_orders)} orders selected for download.")
-    excel_data = generate_excel(selected_orders)
-    st.download_button(
-        label="Download Selected Orders as Excel",
-        data=excel_data,
-        file_name=f"daily_orders_{start_date}_to_{end_date}.xlsx",
-        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+    if not selected_orders.empty:
+        st.success(f"{len(selected_orders)} orders selected for download.")
+        excel_data = generate_excel(selected_orders)
+        st.download_button(
+            label="Download Selected Orders as Excel",
+            data=excel_data,
+            file_name=f"daily_orders_{start_date}_to_{end_date}.xlsx",
+            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
         )
     else:
         st.info("Select at least one order to enable download.")
