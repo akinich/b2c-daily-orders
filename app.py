@@ -1,43 +1,43 @@
 import streamlit as st
 import pandas as pd
 import requests
-from datetime import datetime
 from io import BytesIO
+from datetime import datetime
 
+# Streamlit page config
 st.set_page_config(page_title="Daily Orders", layout="wide")
 
-# === WooCommerce Credentials ===
+# WooCommerce API credentials (from Streamlit secrets)
 WC_API_URL = st.secrets.get("WC_API_URL")
 WC_CONSUMER_KEY = st.secrets.get("WC_CONSUMER_KEY")
 WC_CONSUMER_SECRET = st.secrets.get("WC_CONSUMER_SECRET")
 
-if not WC_API_URL or not WC_CONSUMER_KEY or not WC_CONSUMER_SECRET:
-    st.error("WooCommerce API credentials are missing. Please add them to secrets.toml.")
-    st.stop()
-
-# === Fetch WooCommerce Orders ===
+# --- Helper Functions ---
 def fetch_orders(start_date, end_date):
-    """Fetch WooCommerce orders between two dates"""
+    """Fetch orders from WooCommerce between two dates."""
     all_orders = []
     page = 1
-    per_page = 100  # WooCommerce API max
 
     while True:
         response = requests.get(
-            f"{WC_API_URL}/orders",
+            f"{WC_API_URL}/wp-json/wc/v3/orders",
             params={
-                "consumer_key": WC_CONSUMER_KEY,
-                "consumer_secret": WC_CONSUMER_SECRET,
-                "after": start_date + "T00:00:00",
-                "before": end_date + "T23:59:59",
-                "per_page": per_page,
+                "after": f"{start_date}T00:00:00",
+                "before": f"{end_date}T23:59:59",
+                "per_page": 100,
                 "page": page,
+                "status": "any",
+                "order": "asc",
+                "orderby": "id"
             },
-            timeout=30
+            auth=(WC_CONSUMER_KEY, WC_CONSUMER_SECRET)
         )
-        response.raise_for_status()
-        orders = response.json()
 
+        if response.status_code != 200:
+            st.error(f"Error fetching orders: {response.status_code} - {response.text}")
+            return []
+
+        orders = response.json()
         if not orders:
             break
 
@@ -46,102 +46,103 @@ def fetch_orders(start_date, end_date):
 
     return all_orders
 
-# === Transform Data ===
-def transform_orders(raw_orders):
-    """Convert WooCommerce JSON into a clean DataFrame"""
+
+def process_orders(orders):
+    """Process raw WooCommerce orders into a structured DataFrame."""
     data = []
-    for order in raw_orders:
-        order_id = order.get("id")
-        date_created = order.get("date_created", "")[:10]  # YYYY-MM-DD
-        name = f"{order['billing'].get('first_name', '')} {order['billing'].get('last_name', '')}".strip()
-        status = order.get("status", "")
-        total = float(order.get("total", 0))
-        items_count = sum(item.get("quantity", 0) for item in order.get("line_items", []))
+    for idx, order in enumerate(sorted(orders, key=lambda x: x['id'])):
+        # Combine item names into a single cell
+        items_ordered = ", ".join([item['name'] for item in order['line_items']])
+        
+        # Extract shipping address
+        shipping = order.get("shipping", {})
+        shipping_address = ", ".join(filter(None, [
+            shipping.get("address_1"),
+            shipping.get("address_2"),
+            shipping.get("city"),
+            shipping.get("state"),
+            shipping.get("postcode"),
+            shipping.get("country")
+        ]))
 
         data.append({
+            "S.No": idx + 1,
             "Select": False,
-            "Order ID": order_id,
-            "Date": date_created,
-            "Name": name,
-            "Order Status": status,
-            "Order Value": total,
-            "No. of Items": items_count,
+            "Order ID": order['id'],
+            "Date": datetime.strptime(order['date_created'], "%Y-%m-%dT%H:%M:%S").strftime("%Y-%m-%d"),
+            "Name": order['billing'].get('first_name', '') + " " + order['billing'].get('last_name', ''),
+            "Order Status": order['status'],
+            "Order Value": float(order['total']),
+            "No of Items": len(order['line_items']),
+            "Mobile Number": order['billing'].get('phone', ''),
+            "Shipping Address": shipping_address,
+            "Items Ordered": items_ordered
         })
 
-    # Sort by Order ID (ascending)
-    df = pd.DataFrame(data)
-    df = df.sort_values(by="Order ID", ascending=True).reset_index(drop=True)
+    return pd.DataFrame(data)
 
-    # Add serial number column starting at 1
-    df.insert(0, "S.No", range(1, len(df) + 1))
 
-    return df
-
-# === Helper to create Excel file ===
-def to_excel(df):
-    """Export DataFrame to Excel without 'Select' column"""
-    # Drop the Select column if it exists
-    export_df = df.drop(columns=["Select"], errors="ignore")
-
+def generate_excel(df):
+    """Generate a customized Excel file from selected orders."""
     output = BytesIO()
-    with pd.ExcelWriter(output, engine='openpyxl') as writer:
+    
+    # Create a DataFrame with only required columns
+    export_df = df[["Order ID", "Name", "Items Ordered", "Mobile Number", "Shipping Address", "Order Value"]]
+    export_df.rename(columns={
+        "Order ID": "Order No",
+        "Order Value": "Order Total"
+    }, inplace=True)
+
+    with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
         export_df.to_excel(writer, index=False, sheet_name='Orders')
-    return output.getvalue()
+    
+    output.seek(0)
+    return output
 
-# === UI ===
-st.title("📦 Daily Orders")
+# --- Streamlit UI ---
+st.title("Daily Orders")
 
-# Date filters
+# Date range selection
 col1, col2 = st.columns(2)
 with col1:
-    start_date = st.date_input("Start Date", value=datetime.today())
+    start_date = st.date_input("Start Date", datetime.today())
 with col2:
-    end_date = st.date_input("End Date", value=datetime.today())
+    end_date = st.date_input("End Date", datetime.today())
 
-# Initialize session state
-if "orders_df" not in st.session_state:
-    st.session_state.orders_df = None
-
-# === Fetch Orders Button ===
 if st.button("Fetch Orders"):
-    with st.spinner("Fetching orders from WooCommerce..."):
-        orders_raw = fetch_orders(str(start_date), str(end_date))
+    with st.spinner("Fetching orders..."):
+        orders = fetch_orders(start_date, end_date)
 
-        if not orders_raw:
-            st.warning("No orders found for the selected date range.")
-        else:
-            st.session_state.orders_df = transform_orders(orders_raw)
-            st.success(
-                f"Fetched {len(st.session_state.orders_df)} orders between {start_date} and {end_date}"
-            )
+    if orders:
+        df = process_orders(orders)
 
-# === Display Orders If Available ===
-if st.session_state.orders_df is not None:
-    df = st.session_state.orders_df
+        # Display total orders
+        st.write(f"### Total Orders Found: {len(df)}")
 
-    # Editable table with checkboxes
-    st.subheader("Orders Table")
-    edited_df = st.data_editor(
-        df,
-        num_rows="dynamic",
-        hide_index=True,
-        use_container_width=True,
-        key="orders_editor"
-    )
-
-    # Filter only selected rows
-    selected_orders = edited_df[edited_df["Select"] == True]
-
-    st.subheader("Selected Orders")
-    st.write(f"Total selected: {len(selected_orders)}")
-    st.dataframe(selected_orders.drop(columns=["Select"], errors="ignore"), use_container_width=True)
-
-    # === Download Excel ===
-    if not selected_orders.empty:
-        excel_data = to_excel(selected_orders)
-        st.download_button(
-            label="📥 Download Selected Orders as Excel",
-            data=excel_data,
-            file_name=f"selected_orders_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx",
-            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+        # Editable table with selection
+        edited_df = st.data_editor(
+            df,
+            hide_index=True,
+            column_config={
+                "Select": st.column_config.CheckboxColumn(required=False)
+            },
+            use_container_width=True,
+            key="orders_table"
         )
+
+        # Filter only selected rows
+        selected_orders = edited_df[edited_df["Select"] == True]
+
+        if not selected_orders.empty:
+            st.success(f"{len(selected_orders)} orders selected for download.")
+            excel_data = generate_excel(selected_orders)
+            st.download_button(
+                label="Download Selected Orders as Excel",
+                data=excel_data,
+                file_name=f"daily_orders_{start_date}_to_{end_date}.xlsx",
+                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+            )
+        else:
+            st.info("Select at least one order to enable download.")
+    else:
+        st.warning("No orders found for the selected date range.")
