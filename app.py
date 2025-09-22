@@ -79,9 +79,13 @@ def transform_orders(raw_orders):
 
 # === Helper to create Excel file ===
 def to_excel(df):
+    """Export DataFrame to Excel without 'Select' column"""
+    # Drop the Select column if it exists
+    export_df = df.drop(columns=["Select"], errors="ignore")
+
     output = BytesIO()
     with pd.ExcelWriter(output, engine='openpyxl') as writer:
-        df.to_excel(writer, index=False, sheet_name='Orders')
+        export_df.to_excel(writer, index=False, sheet_name='Orders')
     return output.getvalue()
 
 # === UI ===
@@ -130,7 +134,7 @@ if st.session_state.orders_df is not None:
 
     st.subheader("Selected Orders")
     st.write(f"Total selected: {len(selected_orders)}")
-    st.dataframe(selected_orders, use_container_width=True)
+    st.dataframe(selected_orders.drop(columns=["Select"], errors="ignore"), use_container_width=True)
 
     # === Download Excel ===
     if not selected_orders.empty:
