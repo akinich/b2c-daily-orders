@@ -52,10 +52,8 @@ def process_orders(orders):
     """Process raw WooCommerce orders into a structured DataFrame."""
     data = []
     for idx, order in enumerate(sorted(orders, key=lambda x: x['id'])):
-        # Combine item names into a single cell
         items_ordered = ", ".join([item['name'] for item in order['line_items']])
 
-        # Extract shipping address
         shipping = order.get("shipping", {})
         shipping_address = ", ".join(filter(None, [
             shipping.get("address_1"),
@@ -78,7 +76,7 @@ def process_orders(orders):
             "Mobile Number": order['billing'].get('phone', ''),
             "Shipping Address": shipping_address,
             "Items Ordered": items_ordered,
-            "Line Items": order['line_items']  # keep original line_items for Sheet 2
+            "Line Items": order['line_items']  # for Sheet 2
         })
 
     return pd.DataFrame(data)
@@ -103,20 +101,18 @@ def generate_excel(df):
         header_format = workbook.add_format({'bold': True, 'font_color': 'black'})
         for col_num, value in enumerate(sheet1_df.columns.values):
             worksheet1.write(0, col_num, value, header_format)
-            worksheet1.set_column(col_num, col_num, 25)  # auto column width approx
+            worksheet1.set_column(col_num, col_num, 25)
 
-        # Adjust row height
+        # Row height
         for row_num in range(1, len(sheet1_df) + 1):
             worksheet1.set_row(row_num, 20)
 
         # --- Sheet 2: Item Summary ---
-        # Aggregate all line items for selected orders
         items_list = []
         for line_items in df['Line Items']:
             for item in line_items:
                 items_list.append((item['name'], item.get('quantity', 1)))
 
-        # Create summary DataFrame
         summary_df = pd.DataFrame(items_list, columns=['Item Name', 'Quantity'])
         summary_df = summary_df.groupby('Item Name', as_index=False).sum()
         summary_df = summary_df.sort_values('Item Name')
@@ -124,12 +120,12 @@ def generate_excel(df):
         summary_df.to_excel(writer, index=False, sheet_name='Item Summary')
         worksheet2 = writer.sheets['Item Summary']
 
-        # Format headers for sheet 2
+        # Format headers
         for col_num, value in enumerate(summary_df.columns.values):
             worksheet2.write(0, col_num, value, header_format)
             worksheet2.set_column(col_num, col_num, 25)
 
-        # Adjust row height
+        # Row height
         for row_num in range(1, len(summary_df) + 1):
             worksheet2.set_row(row_num, 20)
 
@@ -144,14 +140,14 @@ st.title("Daily Orders")
 if "orders_df" not in st.session_state:
     st.session_state.orders_df = None
 
-# Date range selection
+# Date selection
 col1, col2 = st.columns(2)
 with col1:
     start_date = st.date_input("Start Date", datetime.today())
 with col2:
     end_date = st.date_input("End Date", datetime.today())
 
-# Fetch orders button
+# Fetch button
 if st.button("Fetch Orders"):
     with st.spinner("Fetching orders..."):
         orders = fetch_orders(start_date, end_date)
@@ -160,14 +156,12 @@ if st.button("Fetch Orders"):
         else:
             st.session_state.orders_df = None
 
-# Display orders if available
+# Display orders
 if st.session_state.orders_df is not None:
     df = st.session_state.orders_df
-
-    # Show total orders
     st.write(f"### Total Orders Found: {len(df)}")
 
-    # Editable table with selection
+    # Editable table
     edited_df = st.data_editor(
         df,
         hide_index=True,
@@ -178,9 +172,12 @@ if st.session_state.orders_df is not None:
         key="orders_table"
     )
 
-    # --- FIXED: Preserve Line Items using session_state ---
-    selected_order_ids = edited_df[edited_df["Select"] == True]["Order ID"].tolist()
-    selected_orders = st.session_state.orders_df[st.session_state.orders_df["Order ID"].isin(selected_order_ids)]
+    # --- FIX: sync Select column back to session_state ---
+    for i, order_id in enumerate(edited_df['Order ID']):
+        st.session_state.orders_df.loc[st.session_state.orders_df['Order ID'] == order_id, 'Select'] = edited_df.loc[i, 'Select']
+
+    # Filter selected orders for Excel
+    selected_orders = st.session_state.orders_df[st.session_state.orders_df['Select'] == True]
 
     if not selected_orders.empty:
         st.success(f"{len(selected_orders)} orders selected for download.")
