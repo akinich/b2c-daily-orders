@@ -57,6 +57,8 @@ def process_orders(orders):
             f"{item['name']} x {item.get('quantity', 1)}" 
             for item in order['line_items']
         ])
+        # Total items (sum of quantities)
+        total_items = sum(item.get('quantity', 1) for item in order['line_items'])
 
         shipping = order.get("shipping", {})
         shipping_address = ", ".join(filter(None, [
@@ -77,6 +79,7 @@ def process_orders(orders):
             "Order Status": order['status'],
             "Order Value": float(order['total']),
             "No of Items": len(order['line_items']),
+            "Total Items": total_items,
             "Mobile Number": order['billing'].get('phone', ''),
             "Shipping Address": shipping_address,
             "Items Ordered": items_ordered,
@@ -92,7 +95,7 @@ def generate_excel(df):
 
     with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
         # --- Sheet 1: Orders ---
-        sheet1_df = df[["Order ID", "Name", "Items Ordered", "Mobile Number", "Shipping Address", "Order Value", "Order Status"]].copy()
+        sheet1_df = df[["Order ID", "Name", "Items Ordered", "Mobile Number", "Shipping Address", "Order Value", "Order Status", "Total Items"]].copy()
         sheet1_df.rename(columns={
             "Order ID": "Order No",
             "Order Value": "Order Total"
@@ -174,6 +177,7 @@ if st.session_state.orders_df is not None:
     # Cast numeric columns to correct types
     display_df["Order ID"] = display_df["Order ID"].astype(int)
     display_df["No of Items"] = display_df["No of Items"].astype(int)
+    display_df["Total Items"] = display_df["Total Items"].astype(int)
     display_df["Order Value"] = display_df["Order Value"].astype(float)
 
     st.write(f"### Total Orders Found: {len(display_df)}")
