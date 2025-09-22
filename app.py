@@ -180,12 +180,16 @@ if st.session_state.orders_df is not None:
     for i, order_id in enumerate(edited_df['Order ID']):
         st.session_state.orders_df.loc[st.session_state.orders_df['Order ID'] == order_id, 'Select'] = edited_df.loc[i, 'Select']
 
-    # --- Build selected_orders from full data ---
+    # --- Build selected_orders from full data safely ---
     selected_order_ids = st.session_state.orders_df.loc[
         st.session_state.orders_df['Select'] == True, 'Order ID'
     ].tolist()
 
-    selected_orders_list = [o for o in st.session_state.orders_data if o['id'] in selected_order_ids]
+    if st.session_state.orders_data is not None:
+        selected_orders_list = [o for o in st.session_state.orders_data if o['id'] in selected_order_ids]
+    else:
+        selected_orders_list = []
+
     selected_orders = process_orders(selected_orders_list)  # rebuild DataFrame with Line Items
 
     if not selected_orders.empty:
