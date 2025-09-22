@@ -72,7 +72,7 @@ def process_orders(orders):
 
         data.append({
             "S.No": idx + 1,
-            "Select": False,
+            "Select": True,
             "Order ID": order['id'],
             "Date": datetime.strptime(order['date_created'], "%Y-%m-%dT%H:%M:%S").strftime("%Y-%m-%d"),
             "Name": order['billing'].get('first_name', '') + " " + order['billing'].get('last_name', ''),
