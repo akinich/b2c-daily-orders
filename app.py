@@ -172,12 +172,14 @@ if st.session_state.orders_df is not None:
         key="orders_table"
     )
 
-    # --- FIX: sync Select column back to session_state ---
+    # --- Sync Select column back to session_state ---
     for i, order_id in enumerate(edited_df['Order ID']):
         st.session_state.orders_df.loc[st.session_state.orders_df['Order ID'] == order_id, 'Select'] = edited_df.loc[i, 'Select']
 
-    # Filter selected orders for Excel
-    selected_orders = st.session_state.orders_df[st.session_state.orders_df['Select'] == True]
+    # --- FIX: Ensure Line Items exist ---
+    selected_orders = st.session_state.orders_df.loc[
+        st.session_state.orders_df['Select'] == True
+    ].copy()  # <-- copy preserves all columns
 
     if not selected_orders.empty:
         st.success(f"{len(selected_orders)} orders selected for download.")
