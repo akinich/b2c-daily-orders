@@ -53,7 +53,7 @@ def process_orders(orders):
     for idx, order in enumerate(sorted(orders, key=lambda x: x['id'])):
         # Combine item names into a single cell
         items_ordered = ", ".join([item['name'] for item in order['line_items']])
-        
+
         # Extract shipping address
         shipping = order.get("shipping", {})
         shipping_address = ", ".join(filter(None, [
@@ -85,9 +85,9 @@ def process_orders(orders):
 def generate_excel(df):
     """Generate a customized Excel file from selected orders."""
     output = BytesIO()
-    
+
     # Create a DataFrame with only required columns
-    export_df = df[["Order ID", "Name", "Items Ordered", "Mobile Number", "Shipping Address", "Order Value"]]
+    export_df = df[["Order ID", "Name", "Items Ordered", "Mobile Number", "Shipping Address", "Order Value"]].copy()
     export_df.rename(columns={
         "Order ID": "Order No",
         "Order Value": "Order Total"
@@ -95,12 +95,16 @@ def generate_excel(df):
 
     with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
         export_df.to_excel(writer, index=False, sheet_name='Orders')
-    
+
     output.seek(0)
     return output
 
 # --- Streamlit UI ---
 st.title("Daily Orders")
+
+# Initialize session state
+if "orders_df" not in st.session_state:
+    st.session_state.orders_df = None
 
 # Date range selection
 col1, col2 = st.columns(2)
@@ -109,40 +113,46 @@ with col1:
 with col2:
     end_date = st.date_input("End Date", datetime.today())
 
+# Fetch orders button
 if st.button("Fetch Orders"):
     with st.spinner("Fetching orders..."):
         orders = fetch_orders(start_date, end_date)
-
-    if orders:
-        df = process_orders(orders)
-
-        # Display total orders
-        st.write(f"### Total Orders Found: {len(df)}")
-
-        # Editable table with selection
-        edited_df = st.data_editor(
-            df,
-            hide_index=True,
-            column_config={
-                "Select": st.column_config.CheckboxColumn(required=False)
-            },
-            use_container_width=True,
-            key="orders_table"
-        )
-
-        # Filter only selected rows
-        selected_orders = edited_df[edited_df["Select"] == True]
-
-        if not selected_orders.empty:
-            st.success(f"{len(selected_orders)} orders selected for download.")
-            excel_data = generate_excel(selected_orders)
-            st.download_button(
-                label="Download Selected Orders as Excel",
-                data=excel_data,
-                file_name=f"daily_orders_{start_date}_to_{end_date}.xlsx",
-                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-            )
+        if orders:
+            st.session_state.orders_df = process_orders(orders)
         else:
-            st.info("Select at least one order to enable download.")
+            st.session_state.orders_df = None
+
+# Display orders if available
+if st.session_state.orders_df is not None:
+    df = st.session_state.orders_df
+
+    # Show total orders
+    st.write(f"### Total Orders Found: {len(df)}")
+
+    # Editable table with selection
+    edited_df = st.data_editor(
+        df,
+        hide_index=True,
+        column_config={
+            "Select": st.column_config.CheckboxColumn(required=False)
+        },
+        use_container_width=True,
+        key="orders_table"
+    )
+
+    # Filter only selected rows
+    selected_orders = edited_df[edited_df["Select"] == True]
+
+    if not selected_orders.empty:
+        st.success(f"{len(selected_orders)} orders selected for download.")
+        excel_data = generate_excel(selected_orders)
+        st.download_button(
+            label="Download Selected Orders as Excel",
+            data=excel_data,
+            file_name=f"daily_orders_{start_date}_to_{end_date}.xlsx",
+            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+        )
     else:
-        st.warning("No orders found for the selected date range.")
+        st.info("Select at least one order to enable download.")
+else:
+    st.info("Fetch orders by selecting a date range and clicking 'Fetch Orders'.")
