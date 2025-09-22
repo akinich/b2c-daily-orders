@@ -178,17 +178,22 @@ if st.session_state.orders_df is not None:
         key="orders_table"
     )
 
-    # Filter only selected rows
-    selected_orders = edited_df[edited_df["Select"] == True]
+    # Get the IDs of selected orders from the data_editor
+selected_order_ids = edited_df[edited_df["Select"] == True]["Order ID"].tolist()
 
-    if not selected_orders.empty:
-        st.success(f"{len(selected_orders)} orders selected for download.")
-        excel_data = generate_excel(selected_orders)
-        st.download_button(
-            label="Download Selected Orders as Excel",
-            data=excel_data,
-            file_name=f"daily_orders_{start_date}_to_{end_date}.xlsx",
-            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+# Retrieve the full orders (including Line Items) from session_state
+selected_orders = st.session_state.orders_df[st.session_state.orders_df["Order ID"].isin(selected_order_ids)]
+
+if not selected_orders.empty:
+    st.success(f"{len(selected_orders)} orders selected for download.")
+    excel_data = generate_excel(selected_orders)
+    st.download_button(
+        label="Download Selected Orders as Excel",
+        data=excel_data,
+        file_name=f"daily_orders_{start_date}_to_{end_date}.xlsx",
+        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+    )
+
         )
     else:
         st.info("Select at least one order to enable download.")
