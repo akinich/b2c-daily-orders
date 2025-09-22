@@ -174,7 +174,7 @@ if st.session_state.orders_df is not None:
     st.session_state.orders_df["Select"] = edited_df["Select"]
 
     # Selected orders
-    selected_order_ids = [o._asdict()['Order ID'] for o in st.session_state.orders_df.itertuples() if o.Select]
+    selected_order_ids = [o.Order_ID for o in st.session_state.orders_df.itertuples() if o.Select]
 
     if st.session_state.orders_data is not None:
         selected_orders_list = [o for o in st.session_state.orders_data if o['id'] in selected_order_ids]
