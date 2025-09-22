@@ -16,7 +16,6 @@ if not WC_API_URL or not WC_CONSUMER_KEY or not WC_CONSUMER_SECRET:
     st.stop()
 
 # === Fetch WooCommerce Orders ===
-@st.cache_data(ttl=300)
 def fetch_orders(start_date, end_date):
     """Fetch WooCommerce orders between two dates"""
     all_orders = []
@@ -79,8 +78,7 @@ def to_excel(df):
     output = BytesIO()
     with pd.ExcelWriter(output, engine='openpyxl') as writer:
         df.to_excel(writer, index=False, sheet_name='Orders')
-    processed_data = output.getvalue()
-    return processed_data
+    return output.getvalue()
 
 # === UI ===
 st.title("📦 Daily Orders")
@@ -92,7 +90,11 @@ with col1:
 with col2:
     end_date = st.date_input("End Date", value=datetime.today())
 
-# Fetch orders button
+# Initialize session state
+if "orders_df" not in st.session_state:
+    st.session_state.orders_df = None
+
+# === Fetch Orders Button ===
 if st.button("Fetch Orders"):
     with st.spinner("Fetching orders from WooCommerce..."):
         orders_raw = fetch_orders(str(start_date), str(end_date))
@@ -100,42 +102,46 @@ if st.button("Fetch Orders"):
         if not orders_raw:
             st.warning("No orders found for the selected date range.")
         else:
-            df = transform_orders(orders_raw)
+            st.session_state.orders_df = transform_orders(orders_raw)
+            st.success(f"Fetched {len(st.session_state.orders_df)} orders")
 
-            st.success(f"Fetched {len(df)} orders")
+# === Display Orders If Available ===
+if st.session_state.orders_df is not None:
+    df = st.session_state.orders_df
 
-            # Select how many orders to display
-            max_orders = st.number_input(
-                "Number of orders to display",
-                min_value=1,
-                max_value=len(df),
-                value=min(10, len(df)),
-                step=1
-            )
-            df_limited = df.head(max_orders)
+    # Select how many orders to display
+    max_orders = st.number_input(
+        "Number of orders to display",
+        min_value=1,
+        max_value=len(df),
+        value=min(10, len(df)),
+        step=1
+    )
+    df_limited = df.head(max_orders)
 
-            # Editable table with checkboxes
-            st.subheader("Orders Table")
-            edited_df = st.data_editor(
-                df_limited,
-                num_rows="dynamic",
-                hide_index=True,
-                use_container_width=True
-            )
+    # Editable table with checkboxes
+    st.subheader("Orders Table")
+    edited_df = st.data_editor(
+        df_limited,
+        num_rows="dynamic",
+        hide_index=True,
+        use_container_width=True,
+        key="orders_editor"
+    )
 
-            # Filter only selected rows
-            selected_orders = edited_df[edited_df["Select"] == True]
+    # Filter only selected rows
+    selected_orders = edited_df[edited_df["Select"] == True]
 
-            st.subheader("Selected Orders")
-            st.write(f"Total selected: {len(selected_orders)}")
-            st.dataframe(selected_orders, use_container_width=True)
+    st.subheader("Selected Orders")
+    st.write(f"Total selected: {len(selected_orders)}")
+    st.dataframe(selected_orders, use_container_width=True)
 
-            # === Download Excel ===
-            if not selected_orders.empty:
-                excel_data = to_excel(selected_orders)
-                st.download_button(
-                    label="📥 Download Selected Orders as Excel",
-                    data=excel_data,
-                    file_name=f"selected_orders_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx",
-                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-                )
+    # === Download Excel ===
+    if not selected_orders.empty:
+        excel_data = to_excel(selected_orders)
+        st.download_button(
+            label="📥 Download Selected Orders as Excel",
+            data=excel_data,
+            file_name=f"selected_orders_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx",
+            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+        )
