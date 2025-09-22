@@ -1,4 +1,4 @@
-import streamlit as st
+    import streamlit as st
 import pandas as pd
 import requests
 from io import BytesIO
@@ -183,14 +183,14 @@ else:
 
 selected_orders = process_orders(selected_orders_list)
 
-    if not selected_orders.empty:
-        st.success(f"{len(selected_orders)} orders selected for download.")
-        excel_data = generate_excel(selected_orders)
-        st.download_button(
-            label="Download Selected Orders as Excel",
-            data=excel_data,
-            file_name=f"daily_orders_{start_date}_to_{end_date}.xlsx",
-            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+if not selected_orders.empty:
+    st.success(f"{len(selected_orders)} orders selected for download.")
+    excel_data = generate_excel(selected_orders)
+    st.download_button(
+        label="Download Selected Orders as Excel",
+        data=excel_data,
+        file_name=f"daily_orders_{start_date}_to_{end_date}.xlsx",
+        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
         )
     else:
         st.info("Select at least one order to enable download.")
