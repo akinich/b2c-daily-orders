@@ -97,7 +97,7 @@ def generate_excel(df):
         # --- Sheet 1: Orders ---
         sheet1_df = df[["Order ID", "Name", "Items Ordered", "Mobile Number", "Shipping Address", "Order Value", "Order Status", "Total Items"]].copy()
         sheet1_df.rename(columns={
-            "Order ID": "Order No",
+            "Order ID": "Order #",
             "Order Value": "Order Total"
         }, inplace=True)
         sheet1_df.to_excel(writer, index=False, sheet_name='Orders')
