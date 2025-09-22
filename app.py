@@ -174,11 +174,17 @@ if st.session_state.orders_df is not None:
     # Remove Line Items for display to avoid PyArrow errors
     display_df = df.drop(columns=["Line Items"]).copy()
     
-    # Cast numeric columns to correct types
-    display_df["Order ID"] = display_df["Order ID"].astype(int)
-    display_df["No of Items"] = display_df["No of Items"].astype(int)
-    display_df["Total Items"] = display_df["Total Items"].astype(int)
-    display_df["Order Value"] = display_df["Order Value"].astype(float)
+    # Cast numeric columns safely
+    numeric_cols = ["Order ID", "No of Items", "Order Value"]
+    if "Total Items" in display_df.columns:
+        numeric_cols.append("Total Items")
+
+    for col in numeric_cols:
+        if col in display_df.columns:
+            if col in ["Order ID", "No of Items", "Total Items"]:
+                display_df[col] = display_df[col].astype(int)
+            elif col == "Order Value":
+                display_df[col] = display_df[col].astype(float)
 
     st.write(f"### Total Orders Found: {len(display_df)}")
 
