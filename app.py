@@ -103,6 +103,8 @@ def generate_excel(df):
             "Order Value": "Order Total"
         }, inplace=True)
         # <<< end change >>>
+        # <<< ADD S.No column at the start >>>
+        sheet1_df.insert(0, "S.No", range(1, len(sheet1_df)+1))
         sheet1_df.to_excel(writer, index=False, sheet_name='Orders')
         workbook = writer.book
         worksheet1 = writer.sheets['Orders']
