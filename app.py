@@ -165,8 +165,13 @@ if st.session_state.orders_df is not None:
     df = st.session_state.orders_df.copy()
     
     # Remove Line Items for display to avoid PyArrow errors
-    display_df = df.drop(columns=["Line Items"])
+    display_df = df.drop(columns=["Line Items"]).copy()
     
+    # Cast numeric columns to correct types
+    display_df["Order ID"] = display_df["Order ID"].astype(int)
+    display_df["No of Items"] = display_df["No of Items"].astype(int)
+    display_df["Order Value"] = display_df["Order Value"].astype(float)
+
     st.write(f"### Total Orders Found: {len(display_df)}")
 
     # Editable table
@@ -176,7 +181,7 @@ if st.session_state.orders_df is not None:
         column_config={
             "Select": st.column_config.CheckboxColumn(required=False)
         },
-        use_container_width=True,
+        width='stretch',  # replaces use_container_width
         key="orders_table"
     )
 
