@@ -103,11 +103,11 @@ def generate_excel(df):
         header_format = workbook.add_format({'bold': True, 'font_color': 'black'})
         for col_num, value in enumerate(sheet1_df.columns.values):
             worksheet1.write(0, col_num, value, header_format)
-            worksheet1.set_column(col_num, col_num, 20)  # auto column width approx
+            worksheet1.set_column(col_num, col_num, 25)  # auto column width approx
 
         # Adjust row height
         for row_num in range(1, len(sheet1_df) + 1):
-            worksheet1.set_row(row_num, 18)
+            worksheet1.set_row(row_num, 20)
 
         # --- Sheet 2: Item Summary ---
         # Aggregate all line items for selected orders
@@ -127,11 +127,11 @@ def generate_excel(df):
         # Format headers for sheet 2
         for col_num, value in enumerate(summary_df.columns.values):
             worksheet2.write(0, col_num, value, header_format)
-            worksheet2.set_column(col_num, col_num, 20)
+            worksheet2.set_column(col_num, col_num, 25)
 
         # Adjust row height
         for row_num in range(1, len(summary_df) + 1):
-            worksheet2.set_row(row_num, 18)
+            worksheet2.set_row(row_num, 20)
 
     output.seek(0)
     return output
@@ -178,22 +178,18 @@ if st.session_state.orders_df is not None:
         key="orders_table"
     )
 
-    # Get the IDs of selected orders from the data_editor
-selected_order_ids = edited_df[edited_df["Select"] == True]["Order ID"].tolist()
+    # --- FIXED: Preserve Line Items using session_state ---
+    selected_order_ids = edited_df[edited_df["Select"] == True]["Order ID"].tolist()
+    selected_orders = st.session_state.orders_df[st.session_state.orders_df["Order ID"].isin(selected_order_ids)]
 
-# Retrieve the full orders (including Line Items) from session_state
-selected_orders = st.session_state.orders_df[st.session_state.orders_df["Order ID"].isin(selected_order_ids)]
-
-if not selected_orders.empty:
-    st.success(f"{len(selected_orders)} orders selected for download.")
-    excel_data = generate_excel(selected_orders)
-    st.download_button(
-        label="Download Selected Orders as Excel",
-        data=excel_data,
-        file_name=f"daily_orders_{start_date}_to_{end_date}.xlsx",
-        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-    )
-
+    if not selected_orders.empty:
+        st.success(f"{len(selected_orders)} orders selected for download.")
+        excel_data = generate_excel(selected_orders)
+        st.download_button(
+            label="Download Selected Orders as Excel",
+            data=excel_data,
+            file_name=f"daily_orders_{start_date}_to_{end_date}.xlsx",
+            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
         )
     else:
         st.info("Select at least one order to enable download.")
