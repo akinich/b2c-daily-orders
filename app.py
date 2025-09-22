@@ -1,74 +1,53 @@
 import streamlit as st
 import pandas as pd
-import requests
+from reportlab.pdfgen import canvas
+from reportlab.lib.pagesizes import A4
+from reportlab.pdfbase import pdfmetrics
+from reportlab.pdfbase.ttfonts import TTFont
 from io import BytesIO
 from datetime import datetime
+import requests
+from requests.auth import HTTPBasicAuth
+import json
 import xlsxwriter
 
-# Streamlit page config
-st.set_page_config(page_title="Daily Orders", layout="wide")
-
-# WooCommerce API credentials (from Streamlit secrets)
+# ==============================
+# CONFIGURATIONS
+# ==============================
 WC_API_URL = st.secrets.get("WC_API_URL")
 WC_CONSUMER_KEY = st.secrets.get("WC_CONSUMER_KEY")
 WC_CONSUMER_SECRET = st.secrets.get("WC_CONSUMER_SECRET")
 
-# --- Helper Functions ---
+if not WC_API_URL or not WC_CONSUMER_KEY or not WC_CONSUMER_SECRET:
+    st.error("WooCommerce API credentials are missing. Please add them in Streamlit Secrets.")
+    st.stop()
+
+# ==============================
+# PDF FONT
+# ==============================
+pdfmetrics.registerFont(TTFont('Courier-Bold', 'Courier-Bold.ttf'))
+
+# ==============================
+# HELPER FUNCTIONS
+# ==============================
 def fetch_orders(start_date, end_date):
-    """Fetch orders from WooCommerce between two dates."""
-    all_orders = []
-    page = 1
-
-    while True:
-        response = requests.get(
-            f"{WC_API_URL}/wp-json/wc/v3/orders",
-            params={
-                "after": f"{start_date}T00:00:00",
-                "before": f"{end_date}T23:59:59",
-                "per_page": 100,
-                "page": page,
-                "status": "any",
-                "order": "asc",
-                "orderby": "id"
-            },
-            auth=(WC_CONSUMER_KEY, WC_CONSUMER_SECRET)
-        )
-
-        if response.status_code != 200:
-            st.error(f"Error fetching orders: {response.status_code} - {response.text}")
-            return []
-
-        orders = response.json()
-        if not orders:
-            break
-
-        all_orders.extend(orders)
-        page += 1
-
-    return all_orders
-
+    url = f"{WC_API_URL}/orders"
+    params = {
+        "after": f"{start_date}T00:00:00",
+        "before": f"{end_date}T23:59:59",
+        "per_page": 100,
+        "status": "any"
+    }
+    response = requests.get(url, params=params, auth=HTTPBasicAuth(WC_CONSUMER_KEY, WC_CONSUMER_SECRET))
+    response.raise_for_status()
+    return response.json()
 
 def process_orders(orders):
-    """Process raw WooCommerce orders into a structured DataFrame."""
     data = []
-    for idx, order in enumerate(sorted(orders, key=lambda x: x['id'])):
-        # Build Items Ordered with quantities
-        items_ordered = ", ".join([
-            f"{item['name']} x {item.get('quantity', 1)}" 
-            for item in order['line_items']
-        ])
-        # Total items (sum of quantities)
-        total_items = sum(item.get('quantity', 1) for item in order['line_items'])
-
-        shipping = order.get("shipping", {})
-        shipping_address = ", ".join(filter(None, [
-            shipping.get("address_1"),
-            shipping.get("address_2"),
-            shipping.get("city"),
-            shipping.get("state"),
-            shipping.get("postcode"),
-            shipping.get("country")
-        ]))
+    for idx, order in enumerate(orders):
+        total_items = sum(item['quantity'] for item in order['line_items'])
+        shipping_address = f"{order['shipping']['address_1']}, {order['shipping']['city']}, {order['shipping']['state']} {order['shipping']['postcode']}"
+        items_ordered = ", ".join([f"{item['name']} ({item['quantity']})" for item in order['line_items']])
 
         data.append({
             "S.No": idx + 1,
@@ -83,147 +62,112 @@ def process_orders(orders):
             "Mobile Number": order['billing'].get('phone', ''),
             "Shipping Address": shipping_address,
             "Items Ordered": items_ordered,
-            "Line Items": order['line_items']  # for Sheet 2
+            "Line Items": order['line_items']  # For Sheet 2
         })
-
     return pd.DataFrame(data)
 
-
-def generate_excel(df):
-    """Generate a customized Excel file with two sheets: Orders and Item Summary."""
+def generate_excel(selected_orders_df):
     output = BytesIO()
-
     with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
-        # --- Sheet 1: Orders ---
-        sheet1_df = df[["Order ID", "Name", "Items Ordered", "Mobile Number", "Shipping Address", "Order Value", "Order Status", "Total Items"]].copy()
+        sheet1_df = selected_orders_df.drop(columns=["Select", "Line Items"], errors='ignore')
+        
+        # === CHANGE REQUESTED HERE ===
         sheet1_df.rename(columns={
-            "Order ID": "Order #",
-            "Order Value": "Order Total"
+            "Order No": "Order #",
+            "Customer Name": "Name"
         }, inplace=True)
-        sheet1_df.to_excel(writer, index=False, sheet_name='Orders')
-        workbook = writer.book
-        worksheet1 = writer.sheets['Orders']
+        # ============================
 
-        # Format headers
-        header_format = workbook.add_format({'bold': True, 'font_color': 'black'})
-        for col_num, value in enumerate(sheet1_df.columns.values):
-            worksheet1.write(0, col_num, value, header_format)
-            worksheet1.set_column(col_num, col_num, 30)
+        sheet1_df.to_excel(writer, sheet_name='Orders', index=False)
 
-        # Row height
-        for row_num in range(1, len(sheet1_df) + 1):
-            worksheet1.set_row(row_num, 20)
+        # Sheet 2: Line Items
+        line_items_data = []
+        for _, row in selected_orders_df.iterrows():
+            for item in row["Line Items"]:
+                line_items_data.append({
+                    "Order ID": row["Order ID"],
+                    "Product Name": item["name"],
+                    "Quantity": item["quantity"],
+                    "Price": item["price"],
+                    "Total": item["total"]
+                })
+        if line_items_data:
+            pd.DataFrame(line_items_data).to_excel(writer, sheet_name='Line Items', index=False)
 
-        # --- Sheet 2: Item Summary ---
-        items_list = []
-        for line_items in df['Line Items']:
-            for item in line_items:
-                items_list.append((item['name'], item.get('quantity', 1)))
+        writer.save()
+    return output.getvalue()
 
-        summary_df = pd.DataFrame(items_list, columns=['Item Name', 'Quantity'])
-        summary_df = summary_df.groupby('Item Name', as_index=False).sum()
-        summary_df = summary_df.sort_values('Item Name')
+def generate_pdf(selected_orders_df):
+    buffer = BytesIO()
+    c = canvas.Canvas(buffer, pagesize=A4)
+    width, height = A4
 
-        summary_df.to_excel(writer, index=False, sheet_name='Item Summary')
-        worksheet2 = writer.sheets['Item Summary']
+    for _, row in selected_orders_df.iterrows():
+        c.setFont("Courier-Bold", 12)
+        c.drawString(50, height - 50, f"Order ID: {row['Order ID']}")
+        c.drawString(50, height - 70, f"Customer Name: {row['Name']}")
+        c.drawString(50, height - 90, f"Date: {row['Date']}")
+        c.drawString(50, height - 110, f"Order Total: {row['Order Value']}")
+        c.line(50, height - 130, width - 50, height - 130)
+        c.showPage()
 
-        # Format headers
-        for col_num, value in enumerate(summary_df.columns.values):
-            worksheet2.write(0, col_num, value, header_format)
-            worksheet2.set_column(col_num, col_num, 25)
+    c.save()
+    buffer.seek(0)
+    return buffer
 
-        # Row height
-        for row_num in range(1, len(summary_df) + 1):
-            worksheet2.set_row(row_num, 20)
+# ==============================
+# STREAMLIT UI
+# ==============================
+st.title("WooCommerce Orders Exporter")
 
-    output.seek(0)
-    return output
+start_date = st.date_input("Start Date", value=datetime.today())
+end_date = st.date_input("End Date", value=datetime.today())
 
-
-# --- Streamlit UI ---
-st.title("Daily Orders")
-
-# Initialize session state
-if "orders_df" not in st.session_state:
-    st.session_state.orders_df = None
-if "orders_data" not in st.session_state:
-    st.session_state.orders_data = None
-
-# Date selection
-col1, col2 = st.columns(2)
-with col1:
-    start_date = st.date_input("Start Date", datetime.today())
-with col2:
-    end_date = st.date_input("End Date", datetime.today())
-
-# Fetch button
 if st.button("Fetch Orders"):
     with st.spinner("Fetching orders..."):
         orders = fetch_orders(start_date, end_date)
-        if orders:
-            st.session_state.orders_data = orders  # full JSON
-            st.session_state.orders_df = process_orders(orders)
+        df = process_orders(orders)
+
+        if df.empty:
+            st.warning("No orders found for the selected date range.")
         else:
-            st.session_state.orders_data = None
-            st.session_state.orders_df = None
+            st.session_state["orders_df"] = df
+            st.success(f"Fetched {len(df)} orders.")
 
-# Display orders
-if st.session_state.orders_df is not None:
-    df = st.session_state.orders_df
-
-    # Remove Line Items for display to avoid PyArrow errors
-    display_df = df.drop(columns=["Line Items"]).copy()
-    
-    # Cast numeric columns safely
-    numeric_cols = ["Order ID", "No of Items", "Order Value"]
-    if "Total Items" in display_df.columns:
-        numeric_cols.append("Total Items")
-
-    for col in numeric_cols:
-        if col in display_df.columns:
-            if col in ["Order ID", "No of Items", "Total Items"]:
-                display_df[col] = display_df[col].astype(int)
-            elif col == "Order Value":
-                display_df[col] = display_df[col].astype(float)
-
-    st.write(f"### Total Orders Found: {len(display_df)}")
-
-    # Editable table with persistent checkboxes
+if "orders_df" in st.session_state:
+    st.subheader("Orders Table")
     edited_df = st.data_editor(
-        display_df,
+        st.session_state["orders_df"],
+        use_container_width=True,
+        num_rows="dynamic",
         hide_index=True,
         column_config={
-            "Select": st.column_config.CheckboxColumn(required=False)
-        },
-        width='stretch',
-        key="orders_table"
+            "Select": st.column_config.CheckboxColumn(required=True, default=False)
+        }
     )
 
-    # --- Sync Select column immediately back to session_state ---
-    st.session_state.orders_df['Select'] = edited_df['Select']
+    if st.button("Generate Excel"):
+        selected_orders_df = edited_df[edited_df["Select"] == True]
+        if selected_orders_df.empty:
+            st.warning("No orders selected.")
+        else:
+            excel_data = generate_excel(selected_orders_df)
+            st.download_button(
+                label="Download Excel",
+                data=excel_data,
+                file_name=f"orders_{datetime.today().strftime('%Y%m%d')}.xlsx",
+                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+            )
 
-    # --- Build selected_orders from full data safely ---
-    selected_order_ids = st.session_state.orders_df.loc[
-        st.session_state.orders_df['Select'] == True, 'Order ID'
-    ].tolist()
-
-    if st.session_state.orders_data is not None:
-        selected_orders_list = [o for o in st.session_state.orders_data if o['id'] in selected_order_ids]
-    else:
-        selected_orders_list = []
-
-    selected_orders = process_orders(selected_orders_list)  # rebuild DataFrame with Line Items
-
-    if not selected_orders.empty:
-        st.success(f"{len(selected_orders)} orders selected for download.")
-        excel_data = generate_excel(selected_orders)
-        st.download_button(
-            label="Download Selected Orders as Excel",
-            data=excel_data,
-            file_name=f"daily_orders_{start_date}_to_{end_date}.xlsx",
-            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-        )
-    else:
-        st.info("Select at least one order to enable download.")
-else:
-    st.info("Fetch orders by selecting a date range and clicking 'Fetch Orders'.")
+    if st.button("Generate PDF"):
+        selected_orders_df = edited_df[edited_df["Select"] == True]
+        if selected_orders_df.empty:
+            st.warning("No orders selected.")
+        else:
+            pdf_buffer = generate_pdf(selected_orders_df)
+            st.download_button(
+                label="Download PDF",
+                data=pdf_buffer,
+                file_name=f"orders_{datetime.today().strftime('%Y%m%d')}.pdf",
+                mime="application/pdf"
+            )
