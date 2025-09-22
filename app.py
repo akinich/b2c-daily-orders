@@ -162,12 +162,16 @@ if st.button("Fetch Orders"):
 
 # Display orders
 if st.session_state.orders_df is not None:
-    df = st.session_state.orders_df
-    st.write(f"### Total Orders Found: {len(df)}")
+    df = st.session_state.orders_df.copy()
+    
+    # Remove Line Items for display to avoid PyArrow errors
+    display_df = df.drop(columns=["Line Items"])
+    
+    st.write(f"### Total Orders Found: {len(display_df)}")
 
     # Editable table
     edited_df = st.data_editor(
-        df,
+        display_df,
         hide_index=True,
         column_config={
             "Select": st.column_config.CheckboxColumn(required=False)
